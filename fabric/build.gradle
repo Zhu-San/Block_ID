@@ -1,0 +1,58 @@
+plugins {
+	id 'fabric-loom' version '1.6-SNAPSHOT'
+	id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+	archivesName = 'Block_ID-fabric'
+}
+
+repositories {
+	mavenCentral()
+	maven { url = "https://maven.fabricmc.net/" }
+	maven { url = "https://maven.enginehub.org/repo/" }
+	maven { url = "https://api.modrinth.com/maven" }
+	maven { url = "https://maven.terraformersmc.com/releases/" }
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+	mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+	// 需要 Fabric 版的 WorldEdit (基于 Modrinth Maven)
+	modImplementation "maven.modrinth:worldedit:Wrlqaul6"
+
+	// 拼音库 (Fabric 使用 include 直接打包进主 Jar)
+	implementation 'com.belerweb:pinyin4j:2.5.1'
+	include 'com.belerweb:pinyin4j:2.5.1'
+}
+
+processResources {
+	inputs.property "version", project.version
+
+	filesMatching("fabric.mod.json") {
+		expand "version": project.version
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 17
+}
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_17
+	targetCompatibility = JavaVersion.VERSION_17
+}
+
+// 注意：没有 withSourcesJar()，所以不会生成 sources 包
+
+jar {
+	from("LICENSE") {
+		rename { "${it}_${project.base.archivesName.get()}"}
+	}
+}

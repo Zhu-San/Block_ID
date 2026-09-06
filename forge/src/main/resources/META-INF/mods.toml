@@ -1,0 +1,35 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="Source-Visible - 允许学习修改，禁止二次发布修改版本"
+issueTrackerURL=""
+
+[[mods]]
+modId="block_id"
+version="2.0.3.1-Release"
+displayName="Block_ID"
+authors="MOYBJ"
+description='''A client mod for copying block IDs and generating WorldEdit commands.
+⚠ 本模组版权所有 (c) 2026 MOYBJ。未经作者书面允许，禁止二次修改后公开发布。允许个人学习与非商业使用。'''
+logoFile="icon.png"
+credits="MOYBJ"
+
+[[dependencies.block_id]]
+modId="forge"
+mandatory=true
+versionRange="[47,)"
+ordering="NONE"
+side="CLIENT"
+
+[[dependencies.block_id]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1]"
+ordering="NONE"
+side="CLIENT"
+
+[[dependencies.block_id]]
+modId="worldedit"
+mandatory=true
+versionRange="[7.2,)"
+ordering="AFTER"
+side="CLIENT"
