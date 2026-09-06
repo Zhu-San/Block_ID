@@ -18,9 +18,8 @@ public class ConfigManager {
     private static ConfigData data;
 
     private static class ConfigData {
-        List<String> frequentBlocks = new ArrayList<>();
-        int placeThreshold = 15;
-        int worldEditThreshold = 3;
+        List<FavoritesManager.FavoriteGroup> favoriteGroups = new ArrayList<>();
+        List<HistoryManager.HistoryItem> history = new ArrayList<>();
     }
 
     public static void init() {
@@ -52,24 +51,27 @@ public class ConfigManager {
         }
     }
 
-    public static List<String> getFrequentBlocks() {
+    public static List<FavoritesManager.FavoriteGroup> getFavoriteGroups() {
         if (data == null) init();
-        return new ArrayList<>(data.frequentBlocks);
+        if (data.favoriteGroups == null) data.favoriteGroups = new ArrayList<>();
+        return new ArrayList<>(data.favoriteGroups);
     }
 
-    public static void setFrequentBlocks(List<String> blocks) {
+    public static void setFavoriteGroups(List<FavoritesManager.FavoriteGroup> groups) {
         if (data == null) init();
-        data.frequentBlocks = new ArrayList<>(blocks);
+        data.favoriteGroups = new ArrayList<>(groups);
         save();
     }
 
-    public static int getPlaceThreshold() {
+    public static List<HistoryManager.HistoryItem> getHistory() {
         if (data == null) init();
-        return data.placeThreshold;
+        if (data.history == null) data.history = new ArrayList<>();
+        return new ArrayList<>(data.history);
     }
 
-    public static int getWorldEditThreshold() {
+    public static void setHistory(List<HistoryManager.HistoryItem> history) {
         if (data == null) init();
-        return data.worldEditThreshold;
+        data.history = new ArrayList<>(history);
+        save();
     }
 }

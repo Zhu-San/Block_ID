@@ -36,7 +36,7 @@ public class BlockIdScreen extends Screen {
     private TextFieldWidget targetSearchBar;
 
     private List<String> allBlocks;
-    private List<String> frequentBlocks;
+    private List<String> favoriteBlocks;
 
     private final List<String> selectedIds = new ArrayList<>();
     private final List<String> selectedSources = new ArrayList<>();
@@ -60,12 +60,12 @@ public class BlockIdScreen extends Screen {
     private String lastSearchText = "";
     private String lastTargetText = "";
     private List<String> cachedFilteredAll;
-    private List<String> cachedFilteredFrequent;
+    private List<String> cachedFilteredFavorite;
     private List<String> cachedFilteredSelected;
     private List<String> cachedFilteredTarget;
 
     private int scrollAll = 0;
-    private int scrollFrequent = 0;
+    private int scrollFavorite = 0;
     private int scrollSelected = 0;
     private int scrollSrc = 0;
     private int scrollTgt = 0;
@@ -153,14 +153,14 @@ public class BlockIdScreen extends Screen {
     public BlockIdScreen() {
         super(Text.translatable("gui.block_id.title"));
         this.allBlocks = loadAllBlocks();
-        this.frequentBlocks = FrequentBlockManager.getFrequentBlocks();
+        this.favoriteBlocks = FavoritesManager.getCurrentBlocks();
         for (String blockId : allBlocks) {
             String displayName = getBlockDisplayName(blockId).toLowerCase();
             fullPinyinCache.put(blockId, getAllFullPinyins(displayName));
             initialPinyinCache.put(blockId, getAllInitials(displayName));
         }
         cachedFilteredAll = allBlocks;
-        cachedFilteredFrequent = frequentBlocks;
+        cachedFilteredFavorite = favoriteBlocks;
         cachedFilteredSelected = selectedIds;
         cachedFilteredTarget = allBlocks;
     }
@@ -183,8 +183,8 @@ public class BlockIdScreen extends Screen {
         return all;
     }
 
-    private boolean isInFrequent(String blockId) {
-        return frequentBlocks.contains(blockId);
+    private boolean isInFavorite(String blockId) {
+        return favoriteBlocks.contains(blockId);
     }
 
     private int getMaxScroll(int contentSize, int viewHeight) {
@@ -328,7 +328,7 @@ public class BlockIdScreen extends Screen {
 
     private void resetScroll() {
         scrollAll = 0;
-        scrollFrequent = 0;
+        scrollFavorite = 0;
         scrollSelected = 0;
         scrollSrc = 0;
         scrollTgt = 0;
@@ -393,7 +393,7 @@ public class BlockIdScreen extends Screen {
 
         if (!searchText.equals(lastSearchText)) {
             cachedFilteredAll = filterBlocks(allBlocks, searchText);
-            cachedFilteredFrequent = filterBlocks(frequentBlocks, searchText);
+            cachedFilteredFavorite = filterBlocks(favoriteBlocks, searchText);
             cachedFilteredSelected = filterBlocks(selectedIds, searchText);
             lastSearchText = searchText;
         }
@@ -412,9 +412,9 @@ public class BlockIdScreen extends Screen {
             
             if (targetTabMode) {
                 graphics.enableScissor(midX - 5, listStartY, midX + colWidth, listEndY + 10);
-                renderList(graphics, midX, listStartY - scrollFrequent, frequentBlocks, selectedTargets, 0xCCFF9800, 0xAA000000, "frequent");
+                renderList(graphics, midX, listStartY - scrollFavorite, favoriteBlocks, selectedTargets, 0xCCFF9800, 0xAA000000, "frequent");
                 graphics.disableScissor();
-                renderScrollbar(graphics, midX + colWidth, listStartY, listEndY - listStartY, scrollFrequent, frequentBlocks.size());
+                renderScrollbar(graphics, midX + colWidth, listStartY, listEndY - listStartY, scrollFavorite, favoriteBlocks.size());
             } else {
                 graphics.enableScissor(midX - 5, listStartY, midX + colWidth, listEndY + 10);
                 renderList(graphics, midX, listStartY - scrollTgt, cachedFilteredTarget, selectedTargets, 0xCCFF9800, 0xAA000000, "all");
@@ -440,9 +440,9 @@ public class BlockIdScreen extends Screen {
 
             graphics.drawText(this.textRenderer, "常用方块", midX, listHeaderY, 0xFFAAAAAA, false);
             graphics.enableScissor(midX - 5, listStartY, midX + colWidth, listEndY + 10);
-            renderList(graphics, midX, listStartY - scrollFrequent, frequentBlocks, selectedIds, 0xCC4CAF50, 0xAA000000, "frequent");
+            renderList(graphics, midX, listStartY - scrollFavorite, favoriteBlocks, selectedIds, 0xCC4CAF50, 0xAA000000, "frequent");
             graphics.disableScissor();
-            renderScrollbar(graphics, midX + colWidth, listStartY, listEndY - listStartY, scrollFrequent, frequentBlocks.size());
+            renderScrollbar(graphics, midX + colWidth, listStartY, listEndY - listStartY, scrollFavorite, favoriteBlocks.size());
 
             graphics.drawText(this.textRenderer, "已选列表", rightX, listHeaderY, 0xFFAAAAAA, false);
             graphics.enableScissor(rightX - 5, listStartY, rightX + colWidth, listEndY + 10);
@@ -612,7 +612,7 @@ public class BlockIdScreen extends Screen {
                 } else {
                     graphics.drawText(this.textRenderer, stack.getName().getString(), x + 26, y + 6, 0xFFFFFFFF, false);
                     if ("all".equals(listKind)) {
-                        if (isInFrequent(blockId)) graphics.drawText(this.textRenderer, "✔", x + colWidth - 16, y + 6, 0xFF00FF00, false);
+                        if (isInFavorite(blockId)) graphics.drawText(this.textRenderer, "✔", x + colWidth - 16, y + 6, 0xFF00FF00, false);
                         else graphics.drawText(this.textRenderer, "➕", x + colWidth - 16, y + 6, 0xFFAAAAAA, false);
                     } else if ("frequent".equals(listKind)) {
                         graphics.drawText(this.textRenderer, "➖", x + colWidth - 16, y + 6, 0xFFFF6666, false);
@@ -882,7 +882,7 @@ public class BlockIdScreen extends Screen {
             int y = listStartY - (isReplaceMode ? scrollSrc : scrollAll);
             for (String blockId : cachedFilteredAll) {
                 if (mouseY >= y && mouseY <= y + ITEM_HEIGHT - 4) {
-                    if (mouseX >= leftX + colWidth - 16 && mouseX <= leftX + colWidth) toggleFrequent(blockId);
+                    if (mouseX >= leftX + colWidth - 16 && mouseX <= leftX + colWidth) toggleFavorite(blockId);
                     else {
                         if (isReplaceMode) toggleSelection(selectedSources, blockId);
                         else toggleSelection(selectedIds, blockId);
@@ -898,17 +898,17 @@ public class BlockIdScreen extends Screen {
             List<String> targetList;
             int scroll;
             if (isReplaceMode) {
-                targetList = targetTabMode ? frequentBlocks : cachedFilteredTarget;
-                scroll = targetTabMode ? scrollFrequent : scrollTgt;
+                targetList = targetTabMode ? favoriteBlocks : cachedFilteredTarget;
+                scroll = targetTabMode ? scrollFavorite : scrollTgt;
             } else {
-                targetList = frequentBlocks;
-                scroll = scrollFrequent;
+                targetList = favoriteBlocks;
+                scroll = scrollFavorite;
             }
 
             int y = listStartY - scroll;
             for (String blockId : targetList) {
                 if (mouseY >= y && mouseY <= y + ITEM_HEIGHT - 4) {
-                    if (mouseX >= midX + colWidth - 16 && mouseX <= midX + colWidth) toggleFrequent(blockId);
+                    if (mouseX >= midX + colWidth - 16 && mouseX <= midX + colWidth) toggleFavorite(blockId);
                     else {
                         if (isReplaceMode) toggleSelection(selectedTargets, blockId);
                         else toggleSelection(selectedIds, blockId);
@@ -1073,15 +1073,15 @@ public class BlockIdScreen extends Screen {
         } else if (mouseX >= midX && mouseX < midX + colWidth) {
             if (isReplaceMode) {
                 if (targetTabMode) {
-                    int maxScroll = getMaxScroll(frequentBlocks.size(), listEndY - listStartY);
-                    scrollFrequent -= delta * 20; scrollFrequent = Math.max(0, Math.min(maxScroll, scrollFrequent));
+                    int maxScroll = getMaxScroll(favoriteBlocks.size(), listEndY - listStartY);
+                    scrollFavorite -= delta * 20; scrollFavorite = Math.max(0, Math.min(maxScroll, scrollFavorite));
                 } else {
                     int maxScroll = getMaxScroll(cachedFilteredTarget.size(), listEndY - listStartY);
                     scrollTgt -= delta * 20; scrollTgt = Math.max(0, Math.min(maxScroll, scrollTgt));
                 }
             } else {
-                int maxScroll = getMaxScroll(frequentBlocks.size(), listEndY - listStartY);
-                scrollFrequent -= delta * 20; scrollFrequent = Math.max(0, Math.min(maxScroll, scrollFrequent));
+                int maxScroll = getMaxScroll(favoriteBlocks.size(), listEndY - listStartY);
+                scrollFavorite -= delta * 20; scrollFavorite = Math.max(0, Math.min(maxScroll, scrollFavorite));
             }
             return true;
         } else if (mouseX >= rightX && mouseX < rightX + colWidth) {
@@ -1104,32 +1104,14 @@ public class BlockIdScreen extends Screen {
         return super.mouseScrolled(mouseX, mouseY, delta);
     }
 
-    private void toggleFrequent(String blockId) {
-        if (frequentBlocks.contains(blockId)) {
-            removeFromFrequent(blockId);
+    private void toggleFavorite(String blockId) {
+        if (FavoritesManager.isInCurrentGroup(blockId)) {
+            FavoritesManager.removeBlock(blockId);
         } else {
-            addToFrequent(blockId);
+            FavoritesManager.addBlock(blockId);
         }
+        favoriteBlocks = FavoritesManager.getCurrentBlocks();
     }
-
-    private void addToFrequent(String blockId) {
-        List<String> current = ConfigManager.getFrequentBlocks();
-        if (!current.contains(blockId)) {
-            current.add(blockId);
-            ConfigManager.setFrequentBlocks(current);
-            frequentBlocks = new ArrayList<>(current);
-        }
-    }
-
-    private void removeFromFrequent(String blockId) {
-        List<String> current = ConfigManager.getFrequentBlocks();
-        if (current.contains(blockId)) {
-            current.remove(blockId);
-            ConfigManager.setFrequentBlocks(current);
-            frequentBlocks = new ArrayList<>(current);
-        }
-    }
-
     private void toggleSelection(List<String> list, String blockId) {
         if (list.contains(blockId)) {
             list.remove(blockId);

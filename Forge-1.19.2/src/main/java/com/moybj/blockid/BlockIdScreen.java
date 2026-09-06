@@ -32,12 +32,14 @@ public class BlockIdScreen extends Screen {
 
     
     private boolean targetTabMode = false;
+    private int midTabMode = 0;
 
     private EditBox searchBar;
     private EditBox targetSearchBar;
 
     private List<String> allBlocks;
-    private List<String> frequentBlocks;
+    private List<String> favoriteBlocks;
+    private List<HistoryManager.HistoryItem> historyItems;
 
     private final List<String> selectedIds = new ArrayList<>();
     private final List<String> selectedSources = new ArrayList<>();
@@ -61,12 +63,16 @@ public class BlockIdScreen extends Screen {
     private String lastSearchText = "";
     private String lastTargetText = "";
     private List<String> cachedFilteredAll;
-    private List<String> cachedFilteredFrequent;
+    private List<String> cachedFilteredFavorite;
     private List<String> cachedFilteredSelected;
     private List<String> cachedFilteredTarget;
 
     private int scrollAll = 0;
-    private int scrollFrequent = 0;
+    private int scrollFavorite = 0;
+    private int scrollHistory = 0;
+
+    private int currentPage = 0;
+    private static final int ITEMS_PER_PAGE = 18;
     private int scrollSelected = 0;
     private int scrollSrc = 0;
     private int scrollTgt = 0;
@@ -154,14 +160,14 @@ public class BlockIdScreen extends Screen {
     public BlockIdScreen() {
         super(Component.translatable("gui.block_id.title"));
         this.allBlocks = loadAllBlocks();
-        this.frequentBlocks = FrequentBlockManager.getFrequentBlocks();
+        this.favoriteBlocks = FavoritesManager.getCurrentBlocks();
         for (String blockId : allBlocks) {
             String displayName = getBlockDisplayName(blockId).toLowerCase();
             fullPinyinCache.put(blockId, getAllFullPinyins(displayName));
             initialPinyinCache.put(blockId, getAllInitials(displayName));
         }
         cachedFilteredAll = allBlocks;
-        cachedFilteredFrequent = frequentBlocks;
+        cachedFilteredFavorite = favoriteBlocks;
         cachedFilteredSelected = selectedIds;
         cachedFilteredTarget = allBlocks;
     }
@@ -184,8 +190,8 @@ public class BlockIdScreen extends Screen {
         return all;
     }
 
-    private boolean isInFrequent(String blockId) {
-        return frequentBlocks.contains(blockId);
+    private boolean isInFavorite(String blockId) {
+        return favoriteBlocks.contains(blockId);
     }
 
     private int getMaxScroll(int contentSize, int viewHeight) {
@@ -232,7 +238,7 @@ public class BlockIdScreen extends Screen {
                 this.targetTabMode = false;
             }));
 
-            this.addRenderableWidget(new Button(midX + colWidth / 2, tabY, colWidth / 2, tabH, Component.literal("常用方块"), b -> {
+            this.addRenderableWidget(new Button(midX + colWidth / 2, tabY, colWidth / 2, tabH, Component.literal("收藏夹"), b -> {
                 this.targetTabMode = true;
             }));
         }
@@ -275,7 +281,7 @@ public class BlockIdScreen extends Screen {
             if (!isReplaceMode) {
                 this.addRenderableWidget(new Button(centerX - 105, bottomBtnY, 100, 20, Component.literal("复制 (Set)"), b -> {
                     if (!selectedIds.isEmpty()) {
-                        WorldEditIntegration.copySetCommand(joinBlocksWithProperties(selectedIds));
+                        String setCmd = joinBlocksWithProperties(selectedIds); WorldEditIntegration.copySetCommand(setCmd); addToHistory(setCmd, "set");
                     } else {
                         this.minecraft.player.displayClientMessage(Component.translatable("gui.block_id.please_select"), true);
                     }
@@ -283,7 +289,7 @@ public class BlockIdScreen extends Screen {
             } else {
                 this.addRenderableWidget(new Button(centerX - 105, bottomBtnY, 100, 20, Component.literal("复制 (Replace)"), b -> {
                     if (!selectedSources.isEmpty() && !selectedTargets.isEmpty()) {
-                        WorldEditIntegration.copyReplaceCommand(joinBlocksWithProperties(selectedSources), joinBlocksWithProperties(selectedTargets));
+                        String repSrc = joinBlocksWithProperties(selectedSources); String repTgt = joinBlocksWithProperties(selectedTargets); WorldEditIntegration.copyReplaceCommand(repSrc, repTgt); addToHistory(repSrc + " " + repTgt, "replace");
                     } else {
                         this.minecraft.player.displayClientMessage(Component.translatable("gui.block_id.please_select"), true);
                     }
@@ -305,7 +311,7 @@ public class BlockIdScreen extends Screen {
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (weightInputBlockId != null && weightInputField != null && weightInputField.isFocused()) {
             if (keyCode == 257 || keyCode == 335) { confirmWeightInput(); return true; }
-            if (keyCode == 256) { weightInputBlockId = null; this.setFocused(null); return true; }
+            if (keyCode == 256) { weightInputBlockId = null; weightInputField.setFocus(false); return true; }
             return weightInputField.keyPressed(keyCode, scanCode, modifiers);
         }
         if (this.searchBar.keyPressed(keyCode, scanCode, modifiers) || this.targetSearchBar.keyPressed(keyCode, scanCode, modifiers)) {
@@ -329,7 +335,7 @@ public class BlockIdScreen extends Screen {
 
     private void resetScroll() {
         scrollAll = 0;
-        scrollFrequent = 0;
+        scrollFavorite = 0;
         scrollSelected = 0;
         scrollSrc = 0;
         scrollTgt = 0;
@@ -337,11 +343,11 @@ public class BlockIdScreen extends Screen {
         scrollSelTgt = 0;
     }
 
-    private void renderScrollbar(PoseStack poseStack, int x, int y, int height, int scroll, int totalContent) {
+    private void renderScrollbar(PoseStack graphics, int x, int y, int height, int scroll, int totalContent) {
         int contentHeight = totalContent * ITEM_HEIGHT;
         if (contentHeight <= height) return;
 
-        this.fill(poseStack, x, y, x + scrollBarWidth, y + height, 0x80000000);
+        fill(graphics, x, y, x + scrollBarWidth, y + height, 0x80000000);
         float visibleRatio = (float) height / contentHeight;
         float sliderHeight = Math.max(20, height * visibleRatio);
         sliderHeight = Math.min(sliderHeight, height);
@@ -352,7 +358,7 @@ public class BlockIdScreen extends Screen {
             sliderY = y + (float) scroll / maxScroll * (height - sliderHeight);
             sliderY = Math.max(y, Math.min(y + height - sliderHeight, sliderY));
         }
-        this.fill(poseStack, x, (int) sliderY, x + scrollBarWidth, (int) (sliderY + sliderHeight), 0xCCFFFFFF);
+        fill(graphics, x, (int) sliderY, x + scrollBarWidth, (int) (sliderY + sliderHeight), 0xCCFFFFFF);
     }
 
     private boolean handleScrollbarClick(int x, int y, int height, int scroll, int totalContent, double mouseX, double mouseY) {
@@ -360,37 +366,37 @@ public class BlockIdScreen extends Screen {
     }
 
     @Override
-    public void render(PoseStack poseStack, int mouseX, int mouseY, float partialTick) {
+    public void render(PoseStack graphics, int mouseX, int mouseY, float partialTick) {
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
-        this.fillGradient(poseStack, 0, 0, this.width, this.height, 0xE0202020, 0xF0101010);
-        this.fillGradient(poseStack, 0, 0, this.width, 60, 0xFF3a6ea5, 0x00000000);
+        fillGradient(graphics, 0, 0, this.width, this.height, 0xE0202020, 0xF0101010);
+        fillGradient(graphics, 0, 0, this.width, 60, 0xFF3a6ea5, 0x00000000);
         RenderSystem.disableBlend();
 
-        this.drawCenteredString(poseStack, this.font, Component.translatable("gui.block_id.title"), this.width / 2, 15, 0xFFFFFFFF);
+        this.font.draw(graphics, Component.translatable("gui.block_id.title"), this.width / 2 - this.font.width(Component.translatable("gui.block_id.title")) / 2, 15, 0xFFFFFFFF);
 
         
         int panelBg = 0x90000000;
         int panelBorder = 0xFF3a6ea5;
-        this.fill(poseStack, leftX - 3, listStartY - 3, leftX + colWidth + scrollBarWidth + 3, listEndY + 3, panelBg);
-        this.fill(poseStack, midX - 3, listStartY - 3, midX + colWidth + scrollBarWidth + 3, listEndY + 3, panelBg);
-        this.fill(poseStack, rightX - 3, listStartY - 3, rightX + colWidth + 3, listEndY + 3, panelBg);
+        fill(graphics, leftX - 3, listStartY - 3, leftX + colWidth + scrollBarWidth + 3, listEndY + 3, panelBg);
+        fill(graphics, midX - 3, listStartY - 3, midX + colWidth + scrollBarWidth + 3, listEndY + 3, panelBg);
+        fill(graphics, rightX - 3, listStartY - 3, rightX + colWidth + 3, listEndY + 3, panelBg);
         
-        this.fill(poseStack, leftX - 3, listStartY - 3, leftX + colWidth + scrollBarWidth + 3, listStartY - 2, panelBorder);
-        this.fill(poseStack, midX - 3, listStartY - 3, midX + colWidth + scrollBarWidth + 3, listStartY - 2, panelBorder);
-        this.fill(poseStack, rightX - 3, listStartY - 3, rightX + colWidth + 3, listStartY - 2, panelBorder);
+        fill(graphics, leftX - 3, listStartY - 3, leftX + colWidth + scrollBarWidth + 3, listStartY - 2, panelBorder);
+        fill(graphics, midX - 3, listStartY - 3, midX + colWidth + scrollBarWidth + 3, listStartY - 2, panelBorder);
+        fill(graphics, rightX - 3, listStartY - 3, rightX + colWidth + 3, listStartY - 2, panelBorder);
 
-        super.render(poseStack, mouseX, mouseY, partialTick);
+        super.render(graphics, mouseX, mouseY, partialTick);
 
-        this.searchBar.render(poseStack, mouseX, mouseY, partialTick);
-        if (isReplaceMode) this.targetSearchBar.render(poseStack, mouseX, mouseY, partialTick);
+        this.searchBar.render(graphics, mouseX, mouseY, partialTick);
+        if (isReplaceMode) this.targetSearchBar.render(graphics, mouseX, mouseY, partialTick);
 
         
         if (this.searchBar.getValue().isEmpty() && !this.searchBar.isFocused()) {
-            this.font.draw(poseStack, "搜索...", this.searchBar.x + 4, this.searchBar.y + 6, 0xFF666666);
+            this.font.draw(graphics, "搜索...", this.searchBar.x + 4, this.searchBar.y + 6, 0xFF666666);
         }
         if (isReplaceMode && this.targetSearchBar.getValue().isEmpty() && !this.targetSearchBar.isFocused()) {
-            this.font.draw(poseStack, "搜索目标...", this.targetSearchBar.x + 4, this.targetSearchBar.y + 6, 0xFF666666);
+            this.font.draw(graphics, "搜索目标...", this.targetSearchBar.x + 4, this.targetSearchBar.y + 6, 0xFF666666);
         }
 
         String searchText = searchBar.getValue().toLowerCase();
@@ -398,7 +404,7 @@ public class BlockIdScreen extends Screen {
 
         if (!searchText.equals(lastSearchText)) {
             cachedFilteredAll = filterBlocks(allBlocks, searchText);
-            cachedFilteredFrequent = filterBlocks(frequentBlocks, searchText);
+            cachedFilteredFavorite = filterBlocks(favoriteBlocks, searchText);
             cachedFilteredSelected = filterBlocks(selectedIds, searchText);
             lastSearchText = searchText;
         }
@@ -408,69 +414,85 @@ public class BlockIdScreen extends Screen {
         }
 
         if (isReplaceMode) {
-            this.font.draw(poseStack, "替换源", leftX, listHeaderY, 0xFFAAAAAA);
-            scissor(leftX - 5, listStartY, leftX + colWidth, listEndY + 10);
-            renderList(poseStack, leftX, listStartY - scrollSrc, cachedFilteredAll, selectedSources, 0xCC4CAF50, 0xAA000000, "all");
-            RenderSystem.disableScissor();
-            renderScrollbar(poseStack, leftX + colWidth, listStartY, listEndY - listStartY, scrollSrc, cachedFilteredAll.size());
+            this.font.draw(graphics, "替换源", leftX, listHeaderY, 0xFFAAAAAA);
+            enableScissor(leftX - 5, listStartY, leftX + colWidth, listEndY + 10);
+            renderList(graphics, leftX, listStartY - scrollSrc, cachedFilteredAll, selectedSources, 0xCC4CAF50, 0xAA000000, "all");
+            disableScissor();
+            renderScrollbar(graphics, leftX + colWidth, listStartY, listEndY - listStartY, scrollSrc, cachedFilteredAll.size());
 
             
             if (targetTabMode) {
-                scissor(midX - 5, listStartY, midX + colWidth, listEndY + 10);
-                renderList(poseStack, midX, listStartY - scrollFrequent, frequentBlocks, selectedTargets, 0xCCFF9800, 0xAA000000, "frequent");
-                RenderSystem.disableScissor();
-                renderScrollbar(poseStack, midX + colWidth, listStartY, listEndY - listStartY, scrollFrequent, frequentBlocks.size());
+                enableScissor(midX - 5, listStartY, midX + colWidth, listEndY + 10);
+                renderList(graphics, midX, listStartY - scrollFavorite, favoriteBlocks, selectedTargets, 0xCCFF9800, 0xAA000000, "frequent");
+                disableScissor();
+                renderScrollbar(graphics, midX + colWidth, listStartY, listEndY - listStartY, scrollFavorite, favoriteBlocks.size());
             } else {
-                scissor(midX - 5, listStartY, midX + colWidth, listEndY + 10);
-                renderList(poseStack, midX, listStartY - scrollTgt, cachedFilteredTarget, selectedTargets, 0xCCFF9800, 0xAA000000, "all");
-                RenderSystem.disableScissor();
-                renderScrollbar(poseStack, midX + colWidth, listStartY, listEndY - listStartY, scrollTgt, cachedFilteredTarget.size());
+                enableScissor(midX - 5, listStartY, midX + colWidth, listEndY + 10);
+                renderList(graphics, midX, listStartY - scrollTgt, cachedFilteredTarget, selectedTargets, 0xCCFF9800, 0xAA000000, "all");
+                disableScissor();
+                renderScrollbar(graphics, midX + colWidth, listStartY, listEndY - listStartY, scrollTgt, cachedFilteredTarget.size());
             }
 
-            this.font.draw(poseStack, "已选源", rightX, listHeaderY, 0xFFAAAAAA);
-            scissor(rightX - 5, listStartY, rightX + colWidth, rightLineY - 5);
-            renderList(poseStack, rightX, listStartY - scrollSelSrc, selectedSources, null, 0xCC4CAF50, 0xAA000000, "selected");
-            RenderSystem.disableScissor();
-            this.fill(poseStack, rightX - 5, rightLineY, rightX + colWidth, rightLineY + 2, 0xFF555555);
-            this.font.draw(poseStack, "已选目标", rightX, rightLineY + 4, 0xFFAAAAAA);
-            scissor(rightX - 5, rightLineY + 10, rightX + colWidth, listEndY + 10);
-            renderList(poseStack, rightX, rightLineY + 10 - scrollSelTgt, selectedTargets, null, 0xCCFF9800, 0xAA000000, "selected");
-            RenderSystem.disableScissor();
+            this.font.draw(graphics, "已选源", rightX, listHeaderY, 0xFFAAAAAA);
+            enableScissor(rightX - 5, listStartY, rightX + colWidth, rightLineY - 5);
+            renderList(graphics, rightX, listStartY - scrollSelSrc, selectedSources, null, 0xCC4CAF50, 0xAA000000, "selected");
+            disableScissor();
+            fill(graphics, rightX - 5, rightLineY, rightX + colWidth, rightLineY + 2, 0xFF555555);
+            this.font.draw(graphics, "已选目标", rightX, rightLineY + 4, 0xFFAAAAAA);
+            enableScissor(rightX - 5, rightLineY + 10, rightX + colWidth, listEndY + 10);
+            renderList(graphics, rightX, rightLineY + 10 - scrollSelTgt, selectedTargets, null, 0xCCFF9800, 0xAA000000, "selected");
+            disableScissor();
         } else {
-            this.font.draw(poseStack, "全部方块", leftX, listHeaderY, 0xFFAAAAAA);
-            scissor(leftX - 5, listStartY, leftX + colWidth, listEndY + 10);
-            renderList(poseStack, leftX, listStartY - scrollAll, cachedFilteredAll, selectedIds, 0xCC4CAF50, 0xAA000000, "all");
-            RenderSystem.disableScissor();
-            renderScrollbar(poseStack, leftX + colWidth, listStartY, listEndY - listStartY, scrollAll, cachedFilteredAll.size());
+            this.font.draw(graphics, "全部方块 (第" + (currentPage + 1) + "/" + getTotalPages() + "页)", leftX, listHeaderY, 0xFFAAAAAA);
+            List<String> pageBlocks = getCurrentPageBlocks();
+            enableScissor(leftX - 5, listStartY, leftX + colWidth, listEndY + 10);
+            renderList(graphics, leftX, listStartY - scrollAll, pageBlocks, selectedIds, 0xCC4CAF50, 0xAA000000, "all");
+            disableScissor();
+            renderScrollbar(graphics, leftX + colWidth, listStartY, listEndY - listStartY, scrollAll, pageBlocks.size());
 
-            this.font.draw(poseStack, "常用方块", midX, listHeaderY, 0xFFAAAAAA);
-            scissor(midX - 5, listStartY, midX + colWidth, listEndY + 10);
-            renderList(poseStack, midX, listStartY - scrollFrequent, frequentBlocks, selectedIds, 0xCC4CAF50, 0xAA000000, "frequent");
-            RenderSystem.disableScissor();
-            renderScrollbar(poseStack, midX + colWidth, listStartY, listEndY - listStartY, scrollFrequent, frequentBlocks.size());
+            int tabW = colWidth / 2; int favColor = midTabMode == 0 ? 0xFF4CAF50 : 0xFF666666; int histColor = midTabMode == 1 ? 0xFF4CAF50 : 0xFF666666; this.font.draw(graphics, "收藏夹", midX, listHeaderY, favColor); this.font.draw(graphics, "历史", midX + tabW, listHeaderY, histColor);
+            enableScissor(midX - 5, listStartY, midX + colWidth, listEndY + 10);
+            if (midTabMode == 0) { String groupName = FavoritesManager.getCurrentGroup().name; this.font.draw(graphics, "[" + groupName + "]", midX, listHeaderY + 12, 0xFFAAAAAA); renderList(graphics, midX, listStartY - scrollFavorite, favoriteBlocks, selectedIds, 0xCC4CAF50, 0xAA000000, "favorite"); } else { renderHistoryList(graphics, midX, listStartY - scrollHistory); }
+            disableScissor();
+            renderScrollbar(graphics, midX + colWidth, listStartY, listEndY - listStartY, scrollFavorite, favoriteBlocks.size());
 
-            this.font.draw(poseStack, "已选列表", rightX, listHeaderY, 0xFFAAAAAA);
-            scissor(rightX - 5, listStartY, rightX + colWidth, listEndY + 10);
-            renderList(poseStack, rightX, listStartY - scrollSelected, selectedIds, null, 0xCCFF9800, 0xAA000000, "selected");
-            RenderSystem.disableScissor();
-            renderScrollbar(poseStack, rightX + colWidth, listStartY, listEndY - listStartY, scrollSelected, selectedIds.size());
+            this.font.draw(graphics, "已选列表", rightX, listHeaderY, 0xFFAAAAAA);
+            enableScissor(rightX - 5, listStartY, rightX + colWidth, listEndY + 10);
+            renderList(graphics, rightX, listStartY - scrollSelected, selectedIds, null, 0xCCFF9800, 0xAA000000, "selected");
+            disableScissor();
+            renderScrollbar(graphics, rightX + colWidth, listStartY, listEndY - listStartY, scrollSelected, selectedIds.size());
         }
 
         int totalSelected = isReplaceMode ? (selectedSources.size() + selectedTargets.size()) : selectedIds.size();
-        this.drawCenteredString(poseStack, this.font, Component.translatable("gui.block_id.selected_count", totalSelected), this.width / 2, tipY, 0xFFFFFFFF);
+        Component selComp = Component.translatable("gui.block_id.selected_count", totalSelected);
+        this.font.draw(graphics, selComp, this.width / 2 - this.font.width(selComp) / 2, tipY, 0xFFFFFFFF);
 
         
         if (weightInputBlockId != null && weightInputField != null) {
-            renderWeightInput(poseStack);
+            renderWeightInput(graphics);
         }
 
         
         if (editingBlockId != null) {
-            renderPropertyEditor(poseStack, mouseX, mouseY);
+            renderPropertyEditor(graphics, mouseX, mouseY);
+        }
+
+        if (!isReplaceMode) {
+            int pageBtnY = listEndY + 5;
+            int pageBtnW = 50;
+            int pageBtnH = 18;
+            if (currentPage > 0) {
+                fill(graphics, leftX, pageBtnY, leftX + pageBtnW, pageBtnY + pageBtnH, 0xFF4CAF50);
+                this.font.draw(graphics, "上一页", leftX + pageBtnW / 2 - this.font.width("上一页") / 2, pageBtnY + 5, 0xFFFFFFFF);
+            }
+            if (currentPage < getTotalPages() - 1) {
+                fill(graphics, leftX + colWidth - pageBtnW, pageBtnY, leftX + colWidth, pageBtnY + pageBtnH, 0xFF4CAF50);
+                this.font.draw(graphics, "下一页", leftX + colWidth - pageBtnW / 2 - this.font.width("下一页") / 2, pageBtnY + 5, 0xFFFFFFFF);
+            }
         }
     }
 
-    private void renderWeightInput(PoseStack poseStack) {
+    private void renderWeightInput(PoseStack graphics) {
         
         int itemY = -1;
         List<String> activeList = selectedIds;
@@ -498,10 +520,10 @@ public class BlockIdScreen extends Screen {
         int inputY = itemY + 3;
         weightInputField.x = inputX;
         weightInputField.y = inputY;
-        weightInputField.render(poseStack, 0, 0, 0);
+        weightInputField.render(graphics, 0, 0, 0);
     }
 
-    private void renderPropertyEditor(PoseStack poseStack, int mouseX, int mouseY) {
+    private void renderPropertyEditor(PoseStack graphics, int mouseX, int mouseY) {
         
         Block block = getBlockFromId(editingBlockId);
         List<Property<?>> properties = (block != null) ? new ArrayList<>(block.getStateDefinition().getProperties()) : new ArrayList<>();
@@ -516,14 +538,14 @@ public class BlockIdScreen extends Screen {
         int panelY = this.height - panelH - 5; 
 
         
-        this.fill(poseStack, panelX, panelY, panelX + panelW, panelY + panelH, 0xFF141428);
-        this.fill(poseStack, panelX, panelY, panelX + panelW, panelY + 1, 0xFF4a8ad5);
-        this.fill(poseStack, panelX, panelY + panelH - 1, panelX + panelW, panelY + panelH, 0xFF4a8ad5);
-        this.fill(poseStack, panelX, panelY, panelX + 1, panelY + panelH, 0xFF4a8ad5);
-        this.fill(poseStack, panelX + panelW - 1, panelY, panelX + panelW, panelY + panelH, 0xFF4a8ad5);
+        fill(graphics, panelX, panelY, panelX + panelW, panelY + panelH, 0xFF141428);
+        fill(graphics, panelX, panelY, panelX + panelW, panelY + 1, 0xFF4a8ad5);
+        fill(graphics, panelX, panelY + panelH - 1, panelX + panelW, panelY + panelH, 0xFF4a8ad5);
+        fill(graphics, panelX, panelY, panelX + 1, panelY + panelH, 0xFF4a8ad5);
+        fill(graphics, panelX + panelW - 1, panelY, panelX + panelW, panelY + panelH, 0xFF4a8ad5);
 
         
-        this.fill(poseStack, panelX + 1, panelY + 1, panelX + panelW - 1, panelY + headerH, 0xFF1a2540);
+        fill(graphics, panelX + 1, panelY + 1, panelX + panelW - 1, panelY + headerH, 0xFF1a2540);
         String blockName = getBlockDisplayName(editingBlockId);
         String title = "⚙ " + blockName;
         if (this.font.width(title) > panelW - 90) {
@@ -531,22 +553,22 @@ public class BlockIdScreen extends Screen {
             while (this.font.width(title + "...") > panelW - 90 && title.length() > 1) title = title.substring(0, title.length() - 1);
             title += "...";
         }
-        this.font.draw(poseStack, title, panelX + 6, panelY + 5, 0xFF88BBFF);
+        this.font.draw(graphics, title, panelX + 6, panelY + 5, 0xFF88BBFF);
 
         
         int closeX = panelX + panelW - 36;
         int closeY = panelY + 3;
-        this.fill(poseStack, closeX, closeY, closeX + 30, closeY + 13, 0xFF8B2020);
-        this.drawCenteredString(poseStack, this.font, "×", closeX + 15, closeY + 3, 0xFFFFFFFF);
+        fill(graphics, closeX, closeY, closeX + 30, closeY + 13, 0xFF8B2020);
+        this.font.draw(graphics, "×", closeX + 15 - this.font.width("×") / 2, closeY + 3, 0xFFFFFFFF);
 
         
         int copyX = panelX + panelW - 74;
         int copyY = panelY + 3;
-        this.fill(poseStack, copyX, copyY, copyX + 34, copyY + 13, 0xFF2a6a3a);
-        this.drawCenteredString(poseStack, this.font, "复制", copyX + 17, copyY + 3, 0xFFFFFFFF);
+        fill(graphics, copyX, copyY, copyX + 34, copyY + 13, 0xFF2a6a3a);
+        this.font.draw(graphics, "复制", copyX + 17 - this.font.width("复制") / 2, copyY + 3, 0xFFFFFFFF);
 
         if (properties.isEmpty()) {
-            this.drawCenteredString(poseStack, this.font, "无可用属性", panelX + panelW / 2, panelY + headerH + 8, 0xFF666666);
+            this.font.draw(graphics, "无可用属性", panelX + panelW / 2 - this.font.width("无可用属性") / 2, panelY + headerH + 8, 0xFF666666);
             return;
         }
 
@@ -555,7 +577,7 @@ public class BlockIdScreen extends Screen {
         int maxScroll = Math.max(0, properties.size() * lineH - contentH);
         propScroll = Math.max(0, Math.min(maxScroll, propScroll));
 
-        scissor(panelX + 4, contentY, panelX + panelW - 4, contentY + contentH);
+        enableScissor(panelX + 4, contentY, panelX + panelW - 4, contentY + contentH);
         int y = contentY - propScroll;
         Map<String, String> currentProps = blockProperties.computeIfAbsent(editingBlockId, k -> new HashMap<>());
 
@@ -567,53 +589,53 @@ public class BlockIdScreen extends Screen {
             String currentValue = currentProps.getOrDefault(propName, getDefaultPropertyValue(block, prop));
 
             int rowBg = (i % 2 == 0) ? 0xFF181830 : 0xFF1c1c36;
-            this.fill(poseStack, panelX + 4, y, panelX + panelW - 4, y + lineH - 1, rowBg);
-            this.fill(poseStack, panelX + 4, y, panelX + 6, y + lineH - 1, 0xFF4a8ad5);
+            fill(graphics, panelX + 4, y, panelX + panelW - 4, y + lineH - 1, rowBg);
+            fill(graphics, panelX + 4, y, panelX + 6, y + lineH - 1, 0xFF4a8ad5);
 
             
             String cnName = mapPropName(propName);
-            this.font.draw(poseStack, cnName, panelX + 10, y + 3, 0xFF88BBFF);
+            this.font.draw(graphics, cnName, panelX + 10, y + 3, 0xFF88BBFF);
 
             
             String displayValue = mapPropValue(currentValue);
             String valueText = displayValue + " " + currentValue;
             int valueWidth = this.font.width(valueText);
             int valueX = panelX + panelW - valueWidth - 10;
-            this.fill(poseStack, valueX - 2, y + 1, valueX + valueWidth + 2, y + lineH - 2, 0xFF252545);
-            this.font.draw(poseStack, valueText, valueX, y + 3, 0xFFFFFF88);
+            fill(graphics, valueX - 2, y + 1, valueX + valueWidth + 2, y + lineH - 2, 0xFF252545);
+            this.font.draw(graphics, valueText, valueX, y + 3, 0xFFFFFF88);
 
             y += lineH;
         }
-        RenderSystem.disableScissor();
+        disableScissor();
 
         
         if (maxScroll > 0) {
             int sbX = panelX + panelW - 5;
-            this.fill(poseStack, sbX, contentY, sbX + 2, contentY + contentH, 0x30FFFFFF);
+            fill(graphics, sbX, contentY, sbX + 2, contentY + contentH, 0x30FFFFFF);
             float ratio = (float) contentH / (properties.size() * lineH);
             int thumbH = Math.max(12, (int)(contentH * ratio));
             int thumbY = contentY + (int)((float) propScroll / maxScroll * (contentH - thumbH));
-            this.fill(poseStack, sbX, thumbY, sbX + 2, thumbY + thumbH, 0x8888BBFF);
+            fill(graphics, sbX, thumbY, sbX + 2, thumbY + thumbH, 0x8888BBFF);
         }
     }
 
-    private void renderList(PoseStack poseStack, int x, int y, List<String> filtered, List<String> selectionList, int selectedColor, int normalColor, String listKind) {
+    private void renderList(PoseStack graphics, int x, int y, List<String> filtered, List<String> selectionList, int selectedColor, int normalColor, String listKind) {
         for (String blockId : filtered) {
             boolean isSelected = selectionList != null && selectionList.contains(blockId);
             if (isSelected) {
-                this.fill(poseStack, x, y, x + colWidth, y + ITEM_HEIGHT - 4, selectedColor);
-                this.fill(poseStack, x, y, x + 2, y + ITEM_HEIGHT - 4, 0xFF8BC34A);
+                fill(graphics, x, y, x + colWidth, y + ITEM_HEIGHT - 4, selectedColor);
+                fill(graphics, x, y, x + 2, y + ITEM_HEIGHT - 4, 0xFF8BC34A);
             } else {
-                this.fill(poseStack, x, y, x + colWidth, y + ITEM_HEIGHT - 4, normalColor);
+                fill(graphics, x, y, x + colWidth, y + ITEM_HEIGHT - 4, normalColor);
             }
             
-            this.fill(poseStack, x, y + ITEM_HEIGHT - 5, x + colWidth, y + ITEM_HEIGHT - 4, 0xFF222222);
+            fill(graphics, x, y + ITEM_HEIGHT - 5, x + colWidth, y + ITEM_HEIGHT - 4, 0xFF222222);
 
             try {
                 String[] parts = blockId.split(":");
                 ResourceLocation rl = new ResourceLocation(parts[0], parts[1]);
                 ItemStack stack = new ItemStack(Registry.BLOCK.get(rl));
-                this.minecraft.getItemRenderer().renderAndDecorateItem(stack, x + 4, y + 2);
+                this.itemRenderer.renderGuiItem(stack, x + 4, y + 2);
 
                 
                 if ("selected".equals(listKind)) {
@@ -621,36 +643,36 @@ public class BlockIdScreen extends Screen {
                     int weight = blockWeights.getOrDefault(blockId, 100);
                     String displayText = stack.getHoverName().getString();
                     if (props != null && !props.isEmpty()) displayText += " [" + props.size() + "]";
-                    this.font.draw(poseStack, displayText, x + 26, y + 6, 0xFFFFFFFF);
+                    this.font.draw(graphics, displayText, x + 26, y + 6, 0xFFFFFFFF);
 
                     
                     int trackX = x + colWidth - 78;
                     int trackW = 26;
                     int trackY = y + 10;
                     
-                    this.fill(poseStack, trackX, trackY, trackX + trackW, trackY + 3, 0xFF333355);
+                    fill(graphics, trackX, trackY, trackX + trackW, trackY + 3, 0xFF333355);
                     
                     int fillW = (int)((float) trackW * weight / 100);
-                    this.fill(poseStack, trackX, trackY, trackX + fillW, trackY + 3, 0xFF4a8ad5);
+                    fill(graphics, trackX, trackY, trackX + fillW, trackY + 3, 0xFF4a8ad5);
                     
                     int thumbX = trackX + fillW - 2;
-                    this.fill(poseStack, thumbX, trackY - 2, thumbX + 4, trackY + 5, 0xFF88BBFF);
+                    fill(graphics, thumbX, trackY - 2, thumbX + 4, trackY + 5, 0xFF88BBFF);
                     
                     String weightText = weight + "%";
-                    this.font.draw(poseStack, weightText, trackX + trackW + 6, y + 6, 0xFFFFFF88);
+                    this.font.draw(graphics, weightText, trackX + trackW + 6, y + 6, 0xFFFFFF88);
                     
-                    this.font.draw(poseStack, "⚙", x + colWidth - 12, y + 6, 0xFF66B0FF);
+                    this.font.draw(graphics, "⚙", x + colWidth - 12, y + 6, 0xFF66B0FF);
                 } else {
-                    this.font.draw(poseStack, stack.getHoverName().getString(), x + 26, y + 6, 0xFFFFFFFF);
+                    this.font.draw(graphics, stack.getHoverName().getString(), x + 26, y + 6, 0xFFFFFFFF);
                     if ("all".equals(listKind)) {
-                        if (isInFrequent(blockId)) this.font.draw(poseStack, "✔", x + colWidth - 16, y + 6, 0xFF00FF00);
-                        else this.font.draw(poseStack, "➕", x + colWidth - 16, y + 6, 0xFFAAAAAA);
+                        if (isInFavorite(blockId)) this.font.draw(graphics, "✔", x + colWidth - 16, y + 6, 0xFF00FF00);
+                        else this.font.draw(graphics, "➕", x + colWidth - 16, y + 6, 0xFFAAAAAA);
                     } else if ("frequent".equals(listKind)) {
-                        this.font.draw(poseStack, "➖", x + colWidth - 16, y + 6, 0xFFFF6666);
+                        this.font.draw(graphics, "➖", x + colWidth - 16, y + 6, 0xFFFF6666);
                     }
                 }
             } catch (Exception e) {
-                this.font.draw(poseStack, blockId, x + 26, y + 6, 0xFFFFFFFF);
+                this.font.draw(graphics, blockId, x + 26, y + 6, 0xFFFFFFFF);
             }
             y += ITEM_HEIGHT;
             if (y > listEndY + 20) break;
@@ -886,6 +908,40 @@ public class BlockIdScreen extends Screen {
     
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (!isReplaceMode) {
+            int tabY = listHeaderY;
+            int tabW = colWidth / 2;
+            if (mouseY >= tabY && mouseY <= tabY + 12) {
+                if (mouseX >= midX && mouseX <= midX + tabW) {
+                    midTabMode = 0; return true;
+                }
+                if (mouseX >= midX + tabW && mouseX <= midX + colWidth) {
+                    midTabMode = 1; return true;
+                }
+            }
+            int pageBtnY = listEndY + 5;
+            int pageBtnW = 50;
+            if (mouseY >= pageBtnY && mouseY <= pageBtnY + 18) {
+                if (mouseX >= leftX && mouseX <= leftX + pageBtnW && currentPage > 0) {
+                    currentPage--; scrollAll = 0; return true;
+                }
+                if (mouseX >= leftX + colWidth - pageBtnW && mouseX <= leftX + colWidth && currentPage < getTotalPages() - 1) {
+                    currentPage++; scrollAll = 0; return true;
+                }
+            }
+            if (midTabMode == 1 && mouseX >= midX && mouseX <= midX + colWidth) {
+                int y = listStartY - scrollHistory;
+                for (int i = 0; i < historyItems.size(); i++) {
+                    if (mouseY >= y && mouseY <= y + ITEM_HEIGHT - 4) {
+                        HistoryManager.HistoryItem item = historyItems.get(i);
+                        this.minecraft.keyboardHandler.setClipboard(item.content);
+                        this.minecraft.player.displayClientMessage(Component.literal("已复制历史记录: " + item.content), true);
+                        return true;
+                    }
+                    y += ITEM_HEIGHT;
+                }
+            }
+        }
         
         if (editingBlockId != null) {
             int[] b = getPropertyPanelBounds();
@@ -941,9 +997,10 @@ public class BlockIdScreen extends Screen {
         
         if (mouseX >= leftX && mouseX <= leftX + colWidth) {
             int y = listStartY - (isReplaceMode ? scrollSrc : scrollAll);
-            for (String blockId : cachedFilteredAll) {
+            List<String> leftList = isReplaceMode ? cachedFilteredAll : getCurrentPageBlocks();
+            for (String blockId : leftList) {
                 if (mouseY >= y && mouseY <= y + ITEM_HEIGHT - 4) {
-                    if (mouseX >= leftX + colWidth - 16 && mouseX <= leftX + colWidth) toggleFrequent(blockId);
+                    if (mouseX >= leftX + colWidth - 16 && mouseX <= leftX + colWidth) toggleFavorite(blockId);
                     else {
                         if (isReplaceMode) toggleSelection(selectedSources, blockId);
                         else toggleSelection(selectedIds, blockId);
@@ -959,17 +1016,17 @@ public class BlockIdScreen extends Screen {
             List<String> targetList;
             int scroll;
             if (isReplaceMode) {
-                targetList = targetTabMode ? frequentBlocks : cachedFilteredTarget;
-                scroll = targetTabMode ? scrollFrequent : scrollTgt;
+                targetList = targetTabMode ? favoriteBlocks : cachedFilteredTarget;
+                scroll = targetTabMode ? scrollFavorite : scrollTgt;
             } else {
-                targetList = frequentBlocks;
-                scroll = scrollFrequent;
+                targetList = favoriteBlocks;
+                scroll = scrollFavorite;
             }
 
             int y = listStartY - scroll;
             for (String blockId : targetList) {
                 if (mouseY >= y && mouseY <= y + ITEM_HEIGHT - 4) {
-                    if (mouseX >= midX + colWidth - 16 && mouseX <= midX + colWidth) toggleFrequent(blockId);
+                    if (mouseX >= midX + colWidth - 16 && mouseX <= midX + colWidth) toggleFavorite(blockId);
                     else {
                         if (isReplaceMode) toggleSelection(selectedTargets, blockId);
                         else toggleSelection(selectedIds, blockId);
@@ -1062,7 +1119,7 @@ public class BlockIdScreen extends Screen {
             weightInputField.setFilter(s -> s.isEmpty() || s.matches("\\d{1,3}"));
         }
         weightInputField.setValue(String.valueOf(weight));
-        
+        weightInputField.setFocus(true);
         this.setFocused(weightInputField);
     }
 
@@ -1095,7 +1152,7 @@ public class BlockIdScreen extends Screen {
             }
         } catch (NumberFormatException ignored) {}
         weightInputBlockId = null;
-        this.setFocused(null);
+        weightInputField.setFocus(false);
     }
 
     @Override
@@ -1153,16 +1210,16 @@ public class BlockIdScreen extends Screen {
         } else if (mouseX >= midX && mouseX < midX + colWidth) {
             if (isReplaceMode) {
                 if (targetTabMode) {
-                    int maxScroll = getMaxScroll(frequentBlocks.size(), listEndY - listStartY);
-                    scrollFrequent -= delta * 20; scrollFrequent = Math.max(0, Math.min(maxScroll, scrollFrequent));
+                    int maxScroll = getMaxScroll(favoriteBlocks.size(), listEndY - listStartY);
+                    scrollFavorite -= delta * 20; scrollFavorite = Math.max(0, Math.min(maxScroll, scrollFavorite));
                 } else {
                     
                     int maxScroll = getMaxScroll(cachedFilteredTarget.size(), listEndY - listStartY);
                     scrollTgt -= delta * 20; scrollTgt = Math.max(0, Math.min(maxScroll, scrollTgt));
                 }
             } else {
-                int maxScroll = getMaxScroll(frequentBlocks.size(), listEndY - listStartY);
-                scrollFrequent -= delta * 20; scrollFrequent = Math.max(0, Math.min(maxScroll, scrollFrequent));
+                int maxScroll = getMaxScroll(favoriteBlocks.size(), listEndY - listStartY);
+                scrollFavorite -= delta * 20; scrollFavorite = Math.max(0, Math.min(maxScroll, scrollFavorite));
             }
             return true;
         } else if (mouseX >= rightX && mouseX < rightX + colWidth) {
@@ -1188,32 +1245,14 @@ public class BlockIdScreen extends Screen {
         return super.mouseScrolled(mouseX, mouseY, delta);
     }
 
-    private void toggleFrequent(String blockId) {
-        if (frequentBlocks.contains(blockId)) {
-            removeFromFrequent(blockId);
+    private void toggleFavorite(String blockId) {
+        if (FavoritesManager.isInCurrentGroup(blockId)) {
+            FavoritesManager.removeBlock(blockId);
         } else {
-            addToFrequent(blockId);
+            FavoritesManager.addBlock(blockId);
         }
+        favoriteBlocks = FavoritesManager.getCurrentBlocks();
     }
-
-    private void addToFrequent(String blockId) {
-        List<String> current = ConfigManager.getFrequentBlocks();
-        if (!current.contains(blockId)) {
-            current.add(blockId);
-            ConfigManager.setFrequentBlocks(current);
-            frequentBlocks = new ArrayList<>(current);
-        }
-    }
-
-    private void removeFromFrequent(String blockId) {
-        List<String> current = ConfigManager.getFrequentBlocks();
-        if (current.contains(blockId)) {
-            current.remove(blockId);
-            ConfigManager.setFrequentBlocks(current);
-            frequentBlocks = new ArrayList<>(current);
-        }
-    }
-
     private void toggleSelection(List<String> list, String blockId) {
         if (list.contains(blockId)) {
             list.remove(blockId);
@@ -1248,12 +1287,41 @@ public class BlockIdScreen extends Screen {
         }
     }
 
+
+    private int getTotalPages() {
+        return Math.max(1, (int) Math.ceil((double) cachedFilteredAll.size() / ITEMS_PER_PAGE));
+    }
+
+    private List<String> getCurrentPageBlocks() {
+        int start = currentPage * ITEMS_PER_PAGE;
+        int end = Math.min(start + ITEMS_PER_PAGE, cachedFilteredAll.size());
+        if (start >= cachedFilteredAll.size()) {
+            currentPage = 0;
+            start = 0;
+            end = Math.min(ITEMS_PER_PAGE, cachedFilteredAll.size());
+        }
+        return new ArrayList<>(cachedFilteredAll.subList(start, end));
+    }
+
+    private void renderHistoryList(PoseStack graphics, int x, int y) {
+        for (int i = 0; i < historyItems.size(); i++) {
+            int itemY = y + i * ITEM_HEIGHT;
+            if (itemY < listStartY - ITEM_HEIGHT || itemY > listEndY) continue;
+            HistoryManager.HistoryItem item = historyItems.get(i);
+            fill(graphics, x, itemY, x + colWidth, itemY + ITEM_HEIGHT - 2, 0xAA000000);
+            String modeText = item.mode.equals("id") ? "[ID]" : item.mode.equals("set") ? "[SET]" : "[REP]";
+            String display = modeText + " " + item.content;
+            if (display.length() > 28) display = display.substring(0, 28) + "...";
+            this.font.draw(graphics, display, x + 4, itemY + 6, 0xFFAAAAAA);
+        }
+    }
+
+    private void addToHistory(String content, String mode) {
+        HistoryManager.addRecord(content, mode);
+        historyItems = HistoryManager.getHistory();
+    }
     @Override
     public boolean isPauseScreen() {
         return false;
-    }
-
-    private void scissor(int x1, int y1, int x2, int y2) {
-        RenderSystem.enableScissor(x1, this.height - y2, x2 - x1, y2 - y1);
     }
 }
