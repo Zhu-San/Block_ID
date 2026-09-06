@@ -53,6 +53,7 @@ public class BlockIdScreen extends Screen {
     private int propScroll = 0;
     
     private EditBox weightInputField = null;
+    private EditBox renameGroupField = null;
     private String weightInputBlockId = null;
     
     private String draggingWeightBlockId = null;
@@ -161,6 +162,7 @@ public class BlockIdScreen extends Screen {
         super(Component.translatable("gui.block_id.title"));
         this.allBlocks = loadAllBlocks();
         this.favoriteBlocks = FavoritesManager.getCurrentBlocks();
+        this.historyItems = HistoryManager.getHistory();
         for (String blockId : allBlocks) {
             String displayName = getBlockDisplayName(blockId).toLowerCase();
             fullPinyinCache.put(blockId, getAllFullPinyins(displayName));
@@ -259,11 +261,12 @@ public class BlockIdScreen extends Screen {
             this.addRenderableWidget(Button.builder(Component.literal("复制ID"), b -> {
                 if (isReplaceMode) {
                     if (!selectedSources.isEmpty() && !selectedTargets.isEmpty()) {
-                        String source = joinBlocksWithProperties(selectedSources);
+                        String source = joinBlocksWithoutWeight(selectedSources);
                         String target = joinBlocksWithProperties(selectedTargets);
                         String finalString = source + " " + target;
                         this.minecraft.keyboardHandler.setClipboard(finalString);
                         this.minecraft.player.displayClientMessage(Component.literal("已复制替换ID: " + finalString), true);
+                        addToHistory(finalString, "replace");
                     } else {
                         this.minecraft.player.displayClientMessage(Component.translatable("gui.block_id.please_select"), true);
                     }
@@ -272,6 +275,7 @@ public class BlockIdScreen extends Screen {
                         String id = joinBlocksWithProperties(selectedIds);
                         this.minecraft.keyboardHandler.setClipboard(id);
                         this.minecraft.player.displayClientMessage(Component.literal("已复制方块ID: " + id), true);
+                        addToHistory(id, "id");
                     } else {
                         this.minecraft.player.displayClientMessage(Component.translatable("gui.block_id.please_select"), true);
                     }
@@ -289,7 +293,7 @@ public class BlockIdScreen extends Screen {
             } else {
                 this.addRenderableWidget(Button.builder(Component.literal("复制 (Replace)"), b -> {
                     if (!selectedSources.isEmpty() && !selectedTargets.isEmpty()) {
-                        String repSrc = joinBlocksWithProperties(selectedSources); String repTgt = joinBlocksWithProperties(selectedTargets); WorldEditIntegration.copyReplaceCommand(repSrc, repTgt); addToHistory(repSrc + " " + repTgt, "replace");
+                        String repSrc = joinBlocksWithoutWeight(selectedSources); String repTgt = joinBlocksWithProperties(selectedTargets); WorldEditIntegration.copyReplaceCommand(repSrc, repTgt); addToHistory(repSrc + " " + repTgt, "replace");
                     } else {
                         this.minecraft.player.displayClientMessage(Component.translatable("gui.block_id.please_select"), true);
                     }
@@ -314,6 +318,22 @@ public class BlockIdScreen extends Screen {
             if (keyCode == 256) { weightInputBlockId = null; weightInputField.setFocused(false); return true; }
             return weightInputField.keyPressed(keyCode, scanCode, modifiers);
         }
+        if (renameGroupField != null && renameGroupField.isFocused()) {
+            if (keyCode == 257 || keyCode == 335) {
+                String newName = renameGroupField.getValue();
+                if (newName != null && !newName.isEmpty()) {
+                    FavoritesManager.renameGroup(FavoritesManager.getCurrentGroupIndex(), newName);
+                    this.minecraft.player.displayClientMessage(Component.literal("组已重命名为: " + newName), true);
+                }
+                renameGroupField = null;
+                return true;
+            }
+            if (keyCode == 256) {
+                renameGroupField = null;
+                return true;
+            }
+            return renameGroupField.keyPressed(keyCode, scanCode, modifiers);
+        }
         if (this.searchBar.keyPressed(keyCode, scanCode, modifiers) || this.targetSearchBar.keyPressed(keyCode, scanCode, modifiers)) {
             resetScroll();
             return true;
@@ -325,6 +345,9 @@ public class BlockIdScreen extends Screen {
     public boolean charTyped(char codePoint, int modifiers) {
         if (weightInputBlockId != null && weightInputField != null && weightInputField.isFocused()) {
             return weightInputField.charTyped(codePoint, modifiers);
+        }
+        if (renameGroupField != null && renameGroupField.isFocused()) {
+            return renameGroupField.charTyped(codePoint, modifiers);
         }
         if (this.searchBar.charTyped(codePoint, modifiers) || this.targetSearchBar.charTyped(codePoint, modifiers)) {
             resetScroll();
@@ -423,9 +446,9 @@ public class BlockIdScreen extends Screen {
             
             if (targetTabMode) {
                 graphics.enableScissor(midX - 5, listStartY, midX + colWidth, listEndY + 10);
-                renderList(graphics, midX, listStartY - scrollFavorite, favoriteBlocks, selectedTargets, 0xCCFF9800, 0xAA000000, "frequent");
+                renderList(graphics, midX, listStartY - scrollFavorite, cachedFilteredFavorite, selectedTargets, 0xCCFF9800, 0xAA000000, "frequent");
                 graphics.disableScissor();
-                renderScrollbar(graphics, midX + colWidth, listStartY, listEndY - listStartY, scrollFavorite, favoriteBlocks.size());
+                renderScrollbar(graphics, midX + colWidth, listStartY + 52, listEndY - listStartY - 52, scrollFavorite, cachedFilteredFavorite.size());
             } else {
                 graphics.enableScissor(midX - 5, listStartY, midX + colWidth, listEndY + 10);
                 renderList(graphics, midX, listStartY - scrollTgt, cachedFilteredTarget, selectedTargets, 0xCCFF9800, 0xAA000000, "all");
@@ -435,7 +458,7 @@ public class BlockIdScreen extends Screen {
 
             graphics.drawString(this.font, "已选源", rightX, listHeaderY, 0xFFAAAAAA);
             graphics.enableScissor(rightX - 5, listStartY, rightX + colWidth, rightLineY - 5);
-            renderList(graphics, rightX, listStartY - scrollSelSrc, selectedSources, null, 0xCC4CAF50, 0xAA000000, "selected");
+            renderList(graphics, rightX, listStartY - scrollSelSrc, selectedSources, null, 0xCC4CAF50, 0xAA000000, "source");
             graphics.disableScissor();
             graphics.fill(rightX - 5, rightLineY, rightX + colWidth, rightLineY + 2, 0xFF555555);
             graphics.drawString(this.font, "已选目标", rightX, rightLineY + 4, 0xFFAAAAAA);
@@ -443,18 +466,53 @@ public class BlockIdScreen extends Screen {
             renderList(graphics, rightX, rightLineY + 10 - scrollSelTgt, selectedTargets, null, 0xCCFF9800, 0xAA000000, "selected");
             graphics.disableScissor();
         } else {
-            graphics.drawString(this.font, "全部方块 (第" + (currentPage + 1) + "/" + getTotalPages() + "页)", leftX, listHeaderY, 0xFFAAAAAA);
-            List<String> pageBlocks = getCurrentPageBlocks();
-            graphics.enableScissor(leftX - 5, listStartY, leftX + colWidth, listEndY + 10);
-            renderList(graphics, leftX, listStartY - scrollAll, pageBlocks, selectedIds, 0xCC4CAF50, 0xAA000000, "all");
+            graphics.drawString(this.font, "全部方块", leftX, listHeaderY, 0xFFAAAAAA);
+                        graphics.enableScissor(leftX - 5, listStartY, leftX + colWidth, listEndY + 10);
+            renderList(graphics, leftX, listStartY - scrollAll, cachedFilteredAll, selectedIds, 0xCC4CAF50, 0xAA000000, "all");
             graphics.disableScissor();
-            renderScrollbar(graphics, leftX + colWidth, listStartY, listEndY - listStartY, scrollAll, pageBlocks.size());
+            renderScrollbar(graphics, leftX + colWidth, listStartY, listEndY - listStartY, scrollAll, cachedFilteredAll.size());
 
             int tabW = colWidth / 2; int favColor = midTabMode == 0 ? 0xFF4CAF50 : 0xFF666666; int histColor = midTabMode == 1 ? 0xFF4CAF50 : 0xFF666666; graphics.drawString(this.font, "收藏夹", midX, listHeaderY, favColor); graphics.drawString(this.font, "历史", midX + tabW, listHeaderY, histColor);
-            graphics.enableScissor(midX - 5, listStartY, midX + colWidth, listEndY + 10);
-            if (midTabMode == 0) { String groupName = FavoritesManager.getCurrentGroup().name; graphics.drawString(this.font, "[" + groupName + "]", midX, listHeaderY + 12, 0xFFAAAAAA); renderList(graphics, midX, listStartY - scrollFavorite, favoriteBlocks, selectedIds, 0xCC4CAF50, 0xAA000000, "favorite"); } else { renderHistoryList(graphics, midX, listStartY - scrollHistory); }
+            int listOffset = 0;
+            if (midTabMode == 0) {
+                int groupsSize = FavoritesManager.getGroups().size();
+                int curIdx = FavoritesManager.getCurrentGroupIndex();
+                String groupName = FavoritesManager.getCurrentGroup().name;
+                int nameY = listHeaderY + 16;
+                int btnW = 20;
+                int btnH = 14;
+                int gap = 4;
+                int step = btnW + gap;
+                boolean[] visible = {curIdx > 0, curIdx < groupsSize - 1, true, true, groupsSize > 1};
+                int btnY = listHeaderY + 30;
+                if (renameGroupField != null) {
+                    renameGroupField.render(graphics, mouseX, mouseY, partialTick);
+                } else {
+                    graphics.drawString(this.font, groupName, midX, nameY, 0xFFFFFFFF);
+                }
+                graphics.drawString(this.font, (curIdx + 1) + "/" + groupsSize, midX + this.font.width(groupName) + 6, nameY, 0xFFAAAAAA);
+                int[] colors = {0xFF666666, 0xFF666666, 0xFF388E3C, 0xFF1565C0, 0xFFC62828};
+                String[] labels = {"<", ">", "+", "R", "D"};
+                int bx = midX;
+                for (int i = 0; i < 5; i++) {
+                    if (!visible[i]) continue;
+                    boolean hover = mouseX >= bx && mouseX <= bx + btnW && mouseY >= btnY && mouseY <= btnY + btnH;
+                    graphics.fill(bx, btnY, bx + btnW, btnY + btnH, hover ? colors[i] + 0x222222 : colors[i]);
+                    graphics.fill(bx, btnY, bx + btnW, btnY + 1, 0xFFFFFFFF);
+                    graphics.fill(bx, btnY + btnH - 1, bx + btnW, btnY + btnH, 0xFF000000);
+                    graphics.drawCenteredString(this.font, labels[i], bx + btnW / 2, btnY + 3, 0xFFFFFFFF);
+                    bx += step;
+                }
+                int lineY = listHeaderY + 48;
+                graphics.fill(midX, lineY, midX + colWidth, lineY + 1, 0xFF4A90D9);
+                listOffset = 40;
+            }
+            graphics.enableScissor(midX - 5, listStartY + listOffset, midX + colWidth, listEndY + 10);
+            if (midTabMode == 0) { renderList(graphics, midX, listStartY + listOffset - scrollFavorite, cachedFilteredFavorite, selectedIds, 0xCC4CAF50, 0xAA000000, "favorite"); } else { renderHistoryList(graphics, midX, listStartY - scrollHistory); }
             graphics.disableScissor();
-            renderScrollbar(graphics, midX + colWidth, listStartY, listEndY - listStartY, scrollFavorite, favoriteBlocks.size());
+            if (midTabMode == 0 && listOffset > 0) {
+                renderScrollbar(graphics, midX + colWidth, listStartY + listOffset, listEndY - listStartY - listOffset, scrollFavorite, cachedFilteredFavorite.size());
+            }
 
             graphics.drawString(this.font, "已选列表", rightX, listHeaderY, 0xFFAAAAAA);
             graphics.enableScissor(rightX - 5, listStartY, rightX + colWidth, listEndY + 10);
@@ -476,19 +534,6 @@ public class BlockIdScreen extends Screen {
             renderPropertyEditor(graphics, mouseX, mouseY);
         }
 
-        if (!isReplaceMode) {
-            int pageBtnY = listEndY + 5;
-            int pageBtnW = 50;
-            int pageBtnH = 18;
-            if (currentPage > 0) {
-                graphics.fill(leftX, pageBtnY, leftX + pageBtnW, pageBtnY + pageBtnH, 0xFF4CAF50);
-                graphics.drawCenteredString(this.font, "上一页", leftX + pageBtnW / 2, pageBtnY + 5, 0xFFFFFFFF);
-            }
-            if (currentPage < getTotalPages() - 1) {
-                graphics.fill(leftX + colWidth - pageBtnW, pageBtnY, leftX + colWidth, pageBtnY + pageBtnH, 0xFF4CAF50);
-                graphics.drawCenteredString(this.font, "下一页", leftX + colWidth - pageBtnW / 2, pageBtnY + 5, 0xFFFFFFFF);
-            }
-        }
     }
 
     private void renderWeightInput(GuiGraphics graphics) {
@@ -661,6 +706,12 @@ public class BlockIdScreen extends Screen {
                     graphics.drawString(this.font, weightText, trackX + trackW + 6, y + 6, 0xFFFFFF88);
                     
                     graphics.drawString(this.font, "⚙", x + colWidth - 12, y + 6, 0xFF66B0FF);
+                } else if ("source".equals(listKind)) {
+                    Map<String, String> props = blockProperties.get(blockId);
+                    String displayText = stack.getHoverName().getString();
+                    if (props != null && !props.isEmpty()) displayText += " [" + props.size() + "]";
+                    graphics.drawString(this.font, displayText, x + 26, y + 6, 0xFFFFFFFF);
+                    graphics.drawString(this.font, "⚙", x + colWidth - 12, y + 6, 0xFF66B0FF);
                 } else {
                     graphics.drawString(this.font, stack.getHoverName().getString(), x + 26, y + 6, 0xFFFFFFFF);
                     if ("all".equals(listKind)) {
@@ -825,6 +876,27 @@ public class BlockIdScreen extends Screen {
         return String.join(",", formatted);
     }
 
+    private String joinBlocksWithoutWeight(List<String> blockIds) {
+        List<String> formatted = new ArrayList<>();
+        for (String id : blockIds) {
+            Map<String, String> props = blockProperties.get(id);
+            StringBuilder sb = new StringBuilder();
+            sb.append(id);
+            if (props != null && !props.isEmpty()) {
+                sb.append("[");
+                boolean first = true;
+                for (Map.Entry<String, String> entry : props.entrySet()) {
+                    if (!first) sb.append(",");
+                    sb.append(entry.getKey()).append("=").append(entry.getValue());
+                    first = false;
+                }
+                sb.append("]");
+            }
+            formatted.add(sb.toString());
+        }
+        return String.join(",", formatted);
+    }
+
     
     private void normalizeWeights(List<String> blockIds) {
         if (blockIds.isEmpty()) return;
@@ -918,15 +990,53 @@ public class BlockIdScreen extends Screen {
                     midTabMode = 1; return true;
                 }
             }
+            if (midTabMode == 0) {
+                int groupsSize = FavoritesManager.getGroups().size();
+                int curIdx = FavoritesManager.getCurrentGroupIndex();
+                int nameY = listHeaderY + 16;
+                int btnW = 20;
+                int btnH = 14;
+                int gap = 4;
+                int step = btnW + gap;
+                int btnY = listHeaderY + 30;
+                boolean[] visible = {curIdx > 0, curIdx < groupsSize - 1, true, true, groupsSize > 1};
+                if (mouseY >= btnY && mouseY <= btnY + btnH) {
+                    int bx = midX;
+                    for (int i = 0; i < 5; i++) {
+                        if (!visible[i]) continue;
+                        if (mouseX >= bx && mouseX <= bx + btnW) {
+                            if (i == 0) { FavoritesManager.setCurrentGroupIndex(curIdx - 1); }
+                            else if (i == 1) { FavoritesManager.setCurrentGroupIndex(curIdx + 1); }
+                            else if (i == 2) { FavoritesManager.addGroup("新组" + (groupsSize + 1)); }
+                            else if (i == 3) {
+                                if (renameGroupField == null) {
+                                    renameGroupField = new EditBox(this.font, midX, listHeaderY + 14, colWidth - 100, 14, Component.literal(""));
+                                    renameGroupField.setMaxLength(16);
+                                    renameGroupField.setValue(FavoritesManager.getCurrentGroup().name);
+                                    renameGroupField.setFocused(true);
+                                    this.setFocused(renameGroupField);
+                                } else {
+                                    String newName = renameGroupField.getValue();
+                                    if (newName != null && !newName.isEmpty()) {
+                                        FavoritesManager.renameGroup(curIdx, newName);
+                                        this.minecraft.player.displayClientMessage(Component.literal("组已重命名为: " + newName), true);
+                                    }
+                                    renameGroupField = null;
+                                }
+                                return true;
+                            }
+                            else if (i == 4) { FavoritesManager.removeGroup(curIdx); }
+                            favoriteBlocks = FavoritesManager.getCurrentBlocks();
+                            cachedFilteredFavorite = favoriteBlocks;
+                            return true;
+                        }
+                        bx += step;
+                    }
+                }
+            }
             int pageBtnY = listEndY + 5;
             int pageBtnW = 50;
             if (mouseY >= pageBtnY && mouseY <= pageBtnY + 18) {
-                if (mouseX >= leftX && mouseX <= leftX + pageBtnW && currentPage > 0) {
-                    currentPage--; scrollAll = 0; return true;
-                }
-                if (mouseX >= leftX + colWidth - pageBtnW && mouseX <= leftX + colWidth && currentPage < getTotalPages() - 1) {
-                    currentPage++; scrollAll = 0; return true;
-                }
             }
             if (midTabMode == 1 && mouseX >= midX && mouseX <= midX + colWidth) {
                 int y = listStartY - scrollHistory;
@@ -996,7 +1106,7 @@ public class BlockIdScreen extends Screen {
         
         if (mouseX >= leftX && mouseX <= leftX + colWidth) {
             int y = listStartY - (isReplaceMode ? scrollSrc : scrollAll);
-            List<String> leftList = isReplaceMode ? cachedFilteredAll : getCurrentPageBlocks();
+            List<String> leftList = cachedFilteredAll;
             for (String blockId : leftList) {
                 if (mouseY >= y && mouseY <= y + ITEM_HEIGHT - 4) {
                     if (mouseX >= leftX + colWidth - 16 && mouseX <= leftX + colWidth) toggleFavorite(blockId);
@@ -1014,15 +1124,24 @@ public class BlockIdScreen extends Screen {
         if (mouseX >= midX && mouseX <= midX + colWidth) {
             List<String> targetList;
             int scroll;
+            int listOffset = 0;
+            if (midTabMode == 0) {
+                int nameY = listHeaderY + 16;
+                int btnH = 14;
+                int btnY = listHeaderY + 30;
+                int lineY = listHeaderY + 48;
+                listOffset = 40;
+            }
             if (isReplaceMode) {
-                targetList = targetTabMode ? favoriteBlocks : cachedFilteredTarget;
+                targetList = targetTabMode ? cachedFilteredFavorite : cachedFilteredTarget;
                 scroll = targetTabMode ? scrollFavorite : scrollTgt;
+                if (!targetTabMode) listOffset = 0;
             } else {
-                targetList = favoriteBlocks;
+                targetList = cachedFilteredFavorite;
                 scroll = scrollFavorite;
             }
 
-            int y = listStartY - scroll;
+            int y = listStartY + listOffset - scroll;
             for (String blockId : targetList) {
                 if (mouseY >= y && mouseY <= y + ITEM_HEIGHT - 4) {
                     if (mouseX >= midX + colWidth - 16 && mouseX <= midX + colWidth) toggleFavorite(blockId);
@@ -1045,21 +1164,7 @@ public class BlockIdScreen extends Screen {
                         int relX = (int) (mouseX - rightX);
                         if (relX >= colWidth - 12) {
                             editingBlockId = blockId; propScroll = 0;
-                        } else if (relX >= colWidth - 78 && relX < colWidth - 52) {
-                            int trackX = colWidth - 78;
-                            int pct = (int)((float)(relX - trackX) / 26 * 100);
-                            if (hasControlDown()) {
-                                
-                                openWeightInput(blockId);
-                            } else {
-                                draggingWeightBlockId = blockId;
-                                setWeight(selectedSources, blockId, pct);
-                            }
-                        } else if (relX >= colWidth - 52 && relX < colWidth - 24 && hasControlDown()) {
-                            
-                            openWeightInput(blockId);
                         }
-                        
                         return true;
                     }
                     ySrc += ITEM_HEIGHT;
@@ -1209,7 +1314,7 @@ public class BlockIdScreen extends Screen {
         } else if (mouseX >= midX && mouseX < midX + colWidth) {
             if (isReplaceMode) {
                 if (targetTabMode) {
-                    int maxScroll = getMaxScroll(favoriteBlocks.size(), listEndY - listStartY);
+                    int maxScroll = getMaxScroll(favoriteBlocks.size(), listEndY - listStartY - 52);
                     scrollFavorite -= delta * 20; scrollFavorite = Math.max(0, Math.min(maxScroll, scrollFavorite));
                 } else {
                     
@@ -1217,7 +1322,7 @@ public class BlockIdScreen extends Screen {
                     scrollTgt -= delta * 20; scrollTgt = Math.max(0, Math.min(maxScroll, scrollTgt));
                 }
             } else {
-                int maxScroll = getMaxScroll(favoriteBlocks.size(), listEndY - listStartY);
+                int maxScroll = getMaxScroll(favoriteBlocks.size(), listEndY - listStartY - 52);
                 scrollFavorite -= delta * 20; scrollFavorite = Math.max(0, Math.min(maxScroll, scrollFavorite));
             }
             return true;
@@ -1251,6 +1356,7 @@ public class BlockIdScreen extends Screen {
             FavoritesManager.addBlock(blockId);
         }
         favoriteBlocks = FavoritesManager.getCurrentBlocks();
+        cachedFilteredFavorite = filterBlocks(favoriteBlocks, searchBar.getValue());
     }
     private void toggleSelection(List<String> list, String blockId) {
         if (list.contains(blockId)) {
@@ -1309,7 +1415,19 @@ public class BlockIdScreen extends Screen {
             HistoryManager.HistoryItem item = historyItems.get(i);
             graphics.fill(x, itemY, x + colWidth, itemY + ITEM_HEIGHT - 2, 0xAA000000);
             String modeText = item.mode.equals("id") ? "[ID]" : item.mode.equals("set") ? "[SET]" : "[REP]";
-            String display = modeText + " " + item.content;
+            String[] ids = item.content.split(",");
+            StringBuilder names = new StringBuilder();
+            for (String id : ids) {
+                id = id.trim();
+                if (id.contains("%")) id = id.substring(id.indexOf("%") + 1);
+                if (id.contains(" ")) id = id.substring(id.lastIndexOf(" ") + 1);
+                String name = getBlockDisplayName(id);
+                if (name != null && !name.isEmpty()) names.append(name).append(", ");
+                else names.append(id).append(", ");
+            }
+            String nameStr = names.toString();
+            if (nameStr.endsWith(", ")) nameStr = nameStr.substring(0, nameStr.length() - 2);
+            String display = modeText + " " + nameStr;
             if (display.length() > 28) display = display.substring(0, 28) + "...";
             graphics.drawString(this.font, display, x + 4, itemY + 6, 0xFFAAAAAA);
         }

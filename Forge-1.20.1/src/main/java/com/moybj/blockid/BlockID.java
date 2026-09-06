@@ -37,6 +37,8 @@ public class BlockID {
     private void clientSetup(final FMLClientSetupEvent event) {
         event.enqueueWork(() -> {
             ConfigManager.init();
+            FavoritesManager.init();
+            HistoryManager.init();
         });
     }
 

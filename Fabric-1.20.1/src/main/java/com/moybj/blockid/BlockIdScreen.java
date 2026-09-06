@@ -252,7 +252,7 @@ public class BlockIdScreen extends Screen {
             this.addSelectableChild(ButtonWidget.builder(Text.literal("复制ID"), b -> {
                 if (isReplaceMode) {
                     if (!selectedSources.isEmpty() && !selectedTargets.isEmpty()) {
-                        String source = joinBlocksWithProperties(selectedSources);
+                        String source = joinBlocksWithoutWeight(selectedSources);
                         String target = joinBlocksWithProperties(selectedTargets);
                         String finalString = source + " " + target;
                         this.client.keyboard.setClipboard(finalString);
@@ -282,7 +282,7 @@ public class BlockIdScreen extends Screen {
             } else {
                 this.addSelectableChild(ButtonWidget.builder(Text.literal("复制 (Replace)"), b -> {
                     if (!selectedSources.isEmpty() && !selectedTargets.isEmpty()) {
-                        WorldEditIntegration.copyReplaceCommand(joinBlocksWithProperties(selectedSources), joinBlocksWithProperties(selectedTargets));
+                        WorldEditIntegration.copyReplaceCommand(joinBlocksWithoutWeight(selectedSources), joinBlocksWithProperties(selectedTargets));
                     } else {
                         this.client.player.sendMessage(Text.translatable("gui.block_id.please_select"), true);
                     }
@@ -773,6 +773,27 @@ public class BlockIdScreen extends Screen {
         return String.join(",", formatted);
     }
 
+    private String joinBlocksWithoutWeight(List<String> blockIds) {
+        List<String> formatted = new ArrayList<>();
+        for (String id : blockIds) {
+            Map<String, String> props = blockProperties.get(id);
+            StringBuilder sb = new StringBuilder();
+            sb.append(id);
+            if (props != null && !props.isEmpty()) {
+                sb.append("[");
+                boolean first = true;
+                for (Map.Entry<String, String> entry : props.entrySet()) {
+                    if (!first) sb.append(",");
+                    sb.append(entry.getKey()).append("=").append(entry.getValue());
+                    first = false;
+                }
+                sb.append("]");
+            }
+            formatted.add(sb.toString());
+        }
+        return String.join(",", formatted);
+    }
+
     private void normalizeWeights(List<String> blockIds) {
         if (blockIds.isEmpty()) return;
         if (blockIds.size() == 1) { blockWeights.put(blockIds.get(0), 100); return; }
@@ -1111,6 +1132,7 @@ public class BlockIdScreen extends Screen {
             FavoritesManager.addBlock(blockId);
         }
         favoriteBlocks = FavoritesManager.getCurrentBlocks();
+        cachedFilteredFavorite = filterBlocks(favoriteBlocks, searchBar.getText());
     }
     private void toggleSelection(List<String> list, String blockId) {
         if (list.contains(blockId)) {

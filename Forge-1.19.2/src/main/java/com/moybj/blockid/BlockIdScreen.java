@@ -259,7 +259,7 @@ public class BlockIdScreen extends Screen {
             this.addRenderableWidget(new Button(centerX - 105, bottomBtnY, 100, 20, Component.literal("复制ID"), b -> {
                 if (isReplaceMode) {
                     if (!selectedSources.isEmpty() && !selectedTargets.isEmpty()) {
-                        String source = joinBlocksWithProperties(selectedSources);
+                        String source = joinBlocksWithoutWeight(selectedSources);
                         String target = joinBlocksWithProperties(selectedTargets);
                         String finalString = source + " " + target;
                         this.minecraft.keyboardHandler.setClipboard(finalString);
@@ -289,7 +289,7 @@ public class BlockIdScreen extends Screen {
             } else {
                 this.addRenderableWidget(new Button(centerX - 105, bottomBtnY, 100, 20, Component.literal("复制 (Replace)"), b -> {
                     if (!selectedSources.isEmpty() && !selectedTargets.isEmpty()) {
-                        String repSrc = joinBlocksWithProperties(selectedSources); String repTgt = joinBlocksWithProperties(selectedTargets); WorldEditIntegration.copyReplaceCommand(repSrc, repTgt); addToHistory(repSrc + " " + repTgt, "replace");
+                        String repSrc = joinBlocksWithoutWeight(selectedSources); String repTgt = joinBlocksWithProperties(selectedTargets); WorldEditIntegration.copyReplaceCommand(repSrc, repTgt); addToHistory(repSrc + " " + repTgt, "replace");
                     } else {
                         this.minecraft.player.displayClientMessage(Component.translatable("gui.block_id.please_select"), true);
                     }
@@ -826,6 +826,27 @@ public class BlockIdScreen extends Screen {
         return String.join(",", formatted);
     }
 
+    private String joinBlocksWithoutWeight(List<String> blockIds) {
+        List<String> formatted = new ArrayList<>();
+        for (String id : blockIds) {
+            Map<String, String> props = blockProperties.get(id);
+            StringBuilder sb = new StringBuilder();
+            sb.append(id);
+            if (props != null && !props.isEmpty()) {
+                sb.append("[");
+                boolean first = true;
+                for (Map.Entry<String, String> entry : props.entrySet()) {
+                    if (!first) sb.append(",");
+                    sb.append(entry.getKey()).append("=").append(entry.getValue());
+                    first = false;
+                }
+                sb.append("]");
+            }
+            formatted.add(sb.toString());
+        }
+        return String.join(",", formatted);
+    }
+
     
     private void normalizeWeights(List<String> blockIds) {
         if (blockIds.isEmpty()) return;
@@ -1252,6 +1273,7 @@ public class BlockIdScreen extends Screen {
             FavoritesManager.addBlock(blockId);
         }
         favoriteBlocks = FavoritesManager.getCurrentBlocks();
+        cachedFilteredFavorite = filterBlocks(favoriteBlocks, searchBar.getValue());
     }
     private void toggleSelection(List<String> list, String blockId) {
         if (list.contains(blockId)) {
