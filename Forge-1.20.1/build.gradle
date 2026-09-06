@@ -1,0 +1,102 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+}
+
+version = '2.0.3.2-Release'
+group = 'com.moybj'
+archivesBaseName = 'Block_ID-forge' // 修改为区分版本
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+minecraft {
+    mappings channel: 'official', version: '1.20.1'
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+
+            mods {
+                blockid {
+                    source sourceSets.main
+                }
+            }
+        }
+        server {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+
+            mods {
+                blockid {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'CurseForge'
+        url = 'https://cursemaven.com'
+    }
+    maven {
+        name = 'Cloth Config'
+        url = 'https://maven.shedaniel.me/'
+    }
+    maven {
+        url 'https://jitpack.io'
+    }
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:1.20.1-47.4.10"
+    implementation fg.deobf("curse.maven:worldedit-225608:4586218")
+    implementation "me.shedaniel.cloth:cloth-config-forge:11.0.99"
+    minecraftLibrary 'com.belerweb:pinyin4j:2.5.1'
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [
+            minecraft_version: '1.20.1',
+            forge_version: '47.4.10',
+            mod_id: 'block_id',
+            mod_name: 'Block_ID (Forge)',
+            mod_author: 'MOYBJ'
+    ]
+    inputs.properties replaceProperties
+    filesMatching('META-INF/mods.toml') {
+        expand replaceProperties
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes([
+                "Specification-Title": "block_id",
+                "Specification-Vendor": "MOYBJ",
+                "Specification-Version": "1",
+                "Implementation-Title": project.name,
+                "Implementation-Version": project.jar.archiveVersion,
+                "Implementation-Vendor": "MOYBJ"
+        ])
+    }
+
+    // 将 pinyin4j 打包进主 Jar，使其成为全量包
+    from {
+        configurations.minecraftLibrary.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+
+    // 排除可能损坏的数字签名文件
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+}
+
+// 彻底禁用 jarJar 任务，防止生成带有 -all 后缀的额外文件
+tasks.named('jarJar').configure {
+    enabled = false
+}

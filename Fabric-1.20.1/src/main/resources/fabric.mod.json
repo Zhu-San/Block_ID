@@ -1,0 +1,25 @@
+{
+	"schemaVersion": 1,
+	"id": "block_id",
+	"version": "2.0.3.2-Release",
+	"name": "Block_ID",
+	"description": "A client mod for copying block IDs and generating WorldEdit commands. ⚠ 本模组版权所有 (c) 2026 MOYBJ。未经作者书面允许，禁止二次修改后公开发布。",
+	"authors": [
+		"MOYBJ"
+	],
+	"license": "Source-Visible",
+	"icon": "icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.moybj.blockid.BlockID"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.15.0",
+		"minecraft": "~1.20.1",
+		"java": ">=17",
+		"fabric-api": "*",
+		"worldedit": "*"
+	}
+}

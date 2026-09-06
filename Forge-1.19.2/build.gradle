@@ -1,0 +1,99 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+}
+
+version = '2.0.3.2-Release'
+group = 'com.moybj'
+archivesBaseName = 'Block_ID-forge'
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+minecraft {
+    mappings channel: 'official', version: '1.19.2'
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+
+            mods {
+                blockid {
+                    source sourceSets.main
+                }
+            }
+        }
+        server {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+
+            mods {
+                blockid {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'CurseForge'
+        url = 'https://cursemaven.com'
+    }
+    maven {
+        name = 'Cloth Config'
+        url = 'https://maven.shedaniel.me/'
+    }
+    maven {
+        url 'https://jitpack.io'
+    }
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:1.19.2-43.3.0"
+    implementation fg.deobf("curse.maven:worldedit-225608:3922622")
+    implementation "me.shedaniel.cloth:cloth-config-forge:8.3.103"
+    minecraftLibrary 'com.belerweb:pinyin4j:2.5.1'
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [
+            minecraft_version: '1.19.2',
+            forge_version: '43.3.0',
+            mod_id: 'block_id',
+            mod_name: 'Block_ID (Forge)',
+            mod_author: 'MOYBJ'
+    ]
+    inputs.properties replaceProperties
+    filesMatching('META-INF/mods.toml') {
+        expand replaceProperties
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes([
+                "Specification-Title": "block_id",
+                "Specification-Vendor": "MOYBJ",
+                "Specification-Version": "1",
+                "Implementation-Title": project.name,
+                "Implementation-Version": project.jar.archiveVersion,
+                "Implementation-Vendor": "MOYBJ"
+        ])
+    }
+
+    from {
+        configurations.minecraftLibrary.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+}
+
+tasks.named('jarJar').configure {
+    enabled = false
+}
